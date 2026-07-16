@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from collections import Counter
+from datetime import datetime
+import os
 from pathlib import Path
 from typing import Iterable
+from urllib.parse import quote, urlsplit, urlunsplit
 
 import pandas as pd
 import streamlit as st
@@ -103,12 +106,78 @@ def validate_model_classes(names: dict | list) -> None:
         raise ValueError("Model tidak memiliki kelas: " + ", ".join(sorted(missing)))
 
 
-def run_inference(model, files, confidence: float, iou: float, image_size: int):
+def get_bardi_settings() -> dict[str, str]:
+    """Read local RTSP settings without failing when Cloud has no secrets file."""
+    try:
+        settings = st.secrets.get("bardi", {})
+        return {
+            "rtsp_url": str(settings.get("rtsp_url", "")).strip(),
+            "username": str(settings.get("username", "")).strip(),
+            "password": str(settings.get("password", "")),
+        }
+    except Exception:
+        return {"rtsp_url": "", "username": "", "password": ""}
+
+
+def build_rtsp_url(base_url: str, username: str = "", password: str = "") -> str:
+    """Validate an RTSP URL and optionally inject escaped credentials."""
+    parts = urlsplit(base_url)
+    if parts.scheme.lower() not in {"rtsp", "rtsps"} or not parts.hostname:
+        raise ValueError("URL kamera harus menggunakan format rtsp:// atau rtsps://")
+    if not username:
+        return base_url
+
+    host = f"[{parts.hostname}]" if ":" in parts.hostname else parts.hostname
+    if parts.port:
+        host += f":{parts.port}"
+    credentials = f"{quote(username, safe='')}:{quote(password, safe='')}@"
+    return urlunsplit((parts.scheme, credentials + host, parts.path, parts.query, parts.fragment))
+
+
+def safe_rtsp_label(base_url: str) -> str:
+    """Return an RTSP endpoint without embedded credentials for display."""
+    parts = urlsplit(base_url)
+    host = parts.hostname or ""
+    if parts.port:
+        host += f":{parts.port}"
+    return urlunsplit((parts.scheme, host, parts.path, "", ""))
+
+
+def capture_rtsp_frame(rtsp_url: str, timeout_ms: int = 8_000) -> Image.Image:
+    """Open a BARDI RTSP stream over TCP and return the freshest available frame."""
+    os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp")
+    import cv2
+
+    capture = cv2.VideoCapture()
+    if hasattr(cv2, "CAP_PROP_OPEN_TIMEOUT_MSEC"):
+        capture.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, timeout_ms)
+    if hasattr(cv2, "CAP_PROP_READ_TIMEOUT_MSEC"):
+        capture.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, timeout_ms)
+
+    try:
+        if not capture.open(rtsp_url, cv2.CAP_FFMPEG):
+            raise ConnectionError("Stream RTSP tidak dapat dibuka")
+
+        frame = None
+        for _ in range(3):
+            success, candidate = capture.read()
+            if success and candidate is not None:
+                frame = candidate
+        if frame is None:
+            raise ConnectionError("Kamera terhubung tetapi frame tidak dapat dibaca")
+
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        return Image.fromarray(rgb_frame)
+    finally:
+        capture.release()
+
+
+def run_inference(model, image_sources, confidence: float, iou: float, image_size: int):
     rows: list[dict] = []
     rendered: list[tuple[str, object]] = []
 
-    for uploaded_file in files:
-        image = Image.open(uploaded_file).convert("RGB")
+    for image_name, source in image_sources:
+        image = source.convert("RGB") if isinstance(source, Image.Image) else Image.open(source).convert("RGB")
         result = model.predict(
             source=image,
             conf=confidence,
@@ -116,7 +185,7 @@ def run_inference(model, files, confidence: float, iou: float, image_size: int):
             imgsz=image_size,
             verbose=False,
         )[0]
-        rendered.append((uploaded_file.name, result.plot()[:, :, ::-1].copy()))
+        rendered.append((image_name, result.plot()[:, :, ::-1].copy()))
 
         if result.boxes is None:
             continue
@@ -128,7 +197,7 @@ def run_inference(model, files, confidence: float, iou: float, image_size: int):
             x1, y1, x2, y2 = xyxy
             rows.append(
                 {
-                    "gambar": uploaded_file.name,
+                    "gambar": image_name,
                     "kelas": result.names[int(class_id)],
                     "confidence": float(score),
                     "x1": round(x1, 1),
@@ -170,9 +239,9 @@ with left:
     st.subheader("Sumber foto maggot")
     input_source = st.radio(
         "Pilih sumber gambar",
-        ["Unggah gambar", "Kamera langsung"],
+        ["Unggah gambar", "Kamera langsung", "Kamera BARDI (RTSP/ODM)"],
         horizontal=True,
-        help="Kamera yang digunakan mengikuti perangkat yang membuka dashboard.",
+        help="Kamera BARDI memerlukan aplikasi lokal yang satu jaringan dengan kamera.",
     )
     if input_source == "Unggah gambar":
         files = st.file_uploader(
@@ -181,16 +250,53 @@ with left:
             accept_multiple_files=True,
             help="Semua hasil deteksi pada kumpulan gambar akan digabungkan.",
         )
-    else:
+        image_sources = [(uploaded_file.name, uploaded_file) for uploaded_file in files]
+    elif input_source == "Kamera langsung":
         camera_capture = st.camera_input(
             "Arahkan kamera ke maggot, lalu ambil foto",
             help="Izinkan akses kamera pada browser. Bisa digunakan dari kamera HP maupun webcam komputer.",
         )
-        files = [camera_capture] if camera_capture is not None else []
+        image_sources = (
+            [(camera_capture.name, camera_capture)] if camera_capture is not None else []
+        )
         st.caption(
             "📱 Di HP, buka dashboard melalui browser dan izinkan akses kamera. "
             "Gunakan koneksi HTTPS agar izin kamera didukung dengan baik."
         )
+    else:
+        bardi_settings = get_bardi_settings()
+        base_rtsp_url = bardi_settings["rtsp_url"]
+        image_sources = []
+        if not base_rtsp_url:
+            st.warning(
+                "Kamera BARDI belum dikonfigurasi. Isi bagian `[bardi]` pada "
+                "`.streamlit/secrets.toml`, lalu jalankan aplikasi secara lokal."
+            )
+        else:
+            st.caption("Endpoint ODM/RTSP aktif")
+            st.code(safe_rtsp_label(base_rtsp_url), language=None)
+            if st.button("📸 Ambil gambar dari BARDI", type="primary", use_container_width=True):
+                try:
+                    authenticated_url = build_rtsp_url(
+                        base_rtsp_url,
+                        bardi_settings["username"],
+                        bardi_settings["password"],
+                    )
+                    with st.spinner("Menghubungkan ke kamera BARDI dan mengambil frame…"):
+                        bardi_frame = capture_rtsp_frame(authenticated_url)
+                    capture_name = f"bardi_{datetime.now():%Y%m%d_%H%M%S}.jpg"
+                    st.session_state["bardi_capture"] = (capture_name, bardi_frame)
+                    st.success("Frame kamera berhasil diambil dan siap dianalisis.")
+                except Exception as exc:
+                    st.error(
+                        f"Gagal mengambil frame BARDI: {exc}. Pastikan kamera dan laptop "
+                        "berada pada Wi-Fi yang sama serta RTSP aktif di ODM."
+                    )
+            if "bardi_capture" in st.session_state:
+                image_sources = [st.session_state["bardi_capture"]]
+            st.caption(
+                "🔒 Kredensial dibaca dari secrets lokal dan tidak ditampilkan di dashboard."
+            )
 with right:
     st.subheader("Aturan keputusan")
     st.markdown(
@@ -199,12 +305,12 @@ with right:
         "⚠️ **Dewasa > ambang** → melewati siap panen"
     )
 
-if not files:
-    empty_message = (
-        "Unggah gambar untuk memulai deteksi."
-        if input_source == "Unggah gambar"
-        else "Ambil foto dari kamera untuk memulai deteksi."
-    )
+if not image_sources:
+    empty_message = {
+        "Unggah gambar": "Unggah gambar untuk memulai deteksi.",
+        "Kamera langsung": "Ambil foto dari kamera untuk memulai deteksi.",
+        "Kamera BARDI (RTSP/ODM)": "Ambil satu frame dari kamera BARDI untuk memulai deteksi.",
+    }[input_source]
     st.info(empty_message, icon="📷")
     st.stop()
 
@@ -215,8 +321,10 @@ if not DEFAULT_MODEL.exists():
 try:
     model = load_model(str(DEFAULT_MODEL))
     validate_model_classes(model.names)
-    with st.spinner(f"Menganalisis {len(files)} gambar…"):
-        detections, rendered_images = run_inference(model, files, confidence, iou, image_size)
+    with st.spinner(f"Menganalisis {len(image_sources)} gambar…"):
+        detections, rendered_images = run_inference(
+            model, image_sources, confidence, iou, image_size
+        )
 except Exception as exc:
     st.error(f"Analisis gagal: {exc}")
     st.stop()
@@ -249,7 +357,9 @@ for column, class_name in zip(metric_columns[:3], EXPECTED_CLASSES):
         f"{counts[class_name]} deteksi",
         delta_color="off",
     )
-metric_columns[3].metric("Total objek", str(len(detections)), f"{len(files)} gambar", delta_color="off")
+metric_columns[3].metric(
+    "Total objek", str(len(detections)), f"{len(image_sources)} gambar", delta_color="off"
+)
 
 st.subheader("Komposisi fase")
 for class_name in EXPECTED_CLASSES:

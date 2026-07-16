@@ -41,6 +41,23 @@ Persentase dihitung dari jumlah confidence per kelas yang dinormalisasi terhadap
 
 Ambang, confidence minimum, IoU, dan ukuran inferensi dapat diubah melalui sidebar.
 
+## Kamera BARDI melalui ODM/RTSP
+
+Mode **Kamera BARDI (RTSP/ODM)** ditujukan untuk aplikasi yang dijalankan secara lokal pada laptop yang satu jaringan Wi-Fi dengan kamera. ODM digunakan untuk menemukan kamera dan URL stream; dashboard membaca URL RTSP tersebut secara langsung.
+
+Salin contoh konfigurasi berikut menjadi `.streamlit/secrets.toml`:
+
+```toml
+[bardi]
+rtsp_url = "rtsp://192.168.1.100:8554/Streaming/Channels/101"
+username = ""
+password = ""
+```
+
+Isi username dan password hanya jika autentikasi RTSP diaktifkan. Jangan commit `secrets.toml` ke GitHub. Jalankan aplikasi lokal, pilih sumber **Kamera BARDI (RTSP/ODM)**, lalu tekan **Ambil gambar dari BARDI**.
+
+Streamlit Community Cloud tidak dapat mengakses alamat IP privat `192.168.x.x`. Untuk membuka dashboard lokal dari HP dengan HTTPS, gunakan tunnel yang mengarah ke Streamlit lokal; proses pengambilan RTSP dan YOLO tetap berjalan pada laptop.
+
 ## Deployment ke Streamlit Community Cloud
 
 1. Unggah repository ini ke GitHub. Pastikan `app.py`, `requirements.txt`, dan `yolo_maggot/weights/best.pt` ikut terunggah.
