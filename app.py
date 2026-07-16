@@ -251,14 +251,14 @@ for column, class_name in zip(metric_columns[:3], EXPECTED_CLASSES):
     )
 metric_columns[3].metric("Total objek", str(len(detections)), f"{len(files)} gambar", delta_color="off")
 
-chart_data = pd.DataFrame(
-    {
-        "Fase": [CLASS_LABELS[name] for name in EXPECTED_CLASSES],
-        "Persentase": [percentages[name] for name in EXPECTED_CLASSES],
-    }
-).set_index("Fase")
 st.subheader("Komposisi fase")
-st.bar_chart(chart_data, y="Persentase", color="#5d873f")
+for class_name in EXPECTED_CLASSES:
+    percentage = max(0.0, min(100.0, percentages[class_name]))
+    st.progress(
+        percentage / 100,
+        text=f"**{CLASS_LABELS[class_name]}** — {percentage:.1f}%",
+    )
+st.caption("Progress bar dibuat noninteraktif agar tidak mengganggu scroll pada layar sentuh.")
 
 image_tab, data_tab, method_tab = st.tabs(["Hasil visual", "Data deteksi", "Metode hitung"])
 with image_tab:
