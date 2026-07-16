@@ -57,11 +57,3 @@ password = ""
 Isi username dan password hanya jika autentikasi RTSP diaktifkan. Jangan commit `secrets.toml` ke GitHub. Jalankan aplikasi lokal, pilih sumber **Kamera BARDI (RTSP/ODM)**, lalu tekan **Ambil gambar dari BARDI**.
 
 Streamlit Community Cloud tidak dapat mengakses alamat IP privat `192.168.x.x`. Untuk membuka dashboard lokal dari HP dengan HTTPS, gunakan tunnel yang mengarah ke Streamlit lokal; proses pengambilan RTSP dan YOLO tetap berjalan pada laptop.
-
-## Deployment ke Streamlit Community Cloud
-
-1. Unggah repository ini ke GitHub. Pastikan `app.py`, `requirements.txt`, dan `yolo_maggot/weights/best.pt` ikut terunggah.
-2. Buka [share.streamlit.io](https://share.streamlit.io) dan hubungkan akun GitHub.
-3. Pilih **Create app** lalu isi repository, branch `main`, dan entrypoint `app.py`.
-4. Pada **Advanced settings**, gunakan Python 3.12.
-5. Pilih **Deploy**. Alamat yang dihasilkan memakai HTTPS sehingga akses kamera HP dapat meminta izin secara normal.
