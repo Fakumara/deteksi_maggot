@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+.streamlit/secrets.toml
+*.py[cod]
+.agents/
+.codex/
+
+# Artefak training tidak diperlukan saat deployment. Model terbaik tetap disertakan.
+yolo_maggot/*
+!yolo_maggot/weights/
+yolo_maggot/weights/*
+!yolo_maggot/weights/best.pt
