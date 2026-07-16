@@ -54,6 +54,6 @@ username = ""
 password = ""
 ```
 
-Isi username dan password hanya jika autentikasi RTSP diaktifkan. Jangan commit `secrets.toml` ke GitHub. Jalankan aplikasi lokal, pilih sumber **Kamera BARDI (RTSP/ODM)**, lalu tekan **Ambil gambar dari BARDI**.
+Isi username dan password hanya jika autentikasi RTSP diaktifkan. Jangan commit `secrets.toml` ke GitHub. Saat mode **Kamera BARDI (RTSP/ODM)** dipilih, username dan password juga dapat diisi atau diganti langsung pada dashboard. Password dimasking dan hanya digunakan selama sesi aktif. Setelah itu tekan **Ambil gambar dari BARDI**.
 
 Streamlit Community Cloud tidak dapat mengakses alamat IP privat `192.168.x.x`. Untuk membuka dashboard lokal dari HP dengan HTTPS, gunakan tunnel yang mengarah ke Streamlit lokal; proses pengambilan RTSP dan YOLO tetap berjalan pada laptop.

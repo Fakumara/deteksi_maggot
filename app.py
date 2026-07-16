@@ -275,12 +275,26 @@ with left:
         else:
             st.caption("Endpoint ODM/RTSP aktif")
             st.code(safe_rtsp_label(base_rtsp_url), language=None)
+            rtsp_username = st.text_input(
+                "Username RTSP",
+                value=bardi_settings["username"],
+                placeholder="Contoh: admin",
+                help="Kosongkan jika kamera tidak memakai autentikasi RTSP.",
+            )
+            rtsp_password = st.text_input(
+                "Password RTSP",
+                value="",
+                type="password",
+                placeholder="Kosong = gunakan password dari secrets",
+                help="Password dari secrets tidak dikirim ke form. Isian baru hanya tersimpan selama sesi dashboard.",
+            )
             if st.button("📸 Ambil gambar dari BARDI", type="primary", use_container_width=True):
+                st.session_state.pop("bardi_capture", None)
                 try:
                     authenticated_url = build_rtsp_url(
                         base_rtsp_url,
-                        bardi_settings["username"],
-                        bardi_settings["password"],
+                        rtsp_username.strip(),
+                        rtsp_password or bardi_settings["password"],
                     )
                     with st.spinner("Menghubungkan ke kamera BARDI dan mengambil frame…"):
                         bardi_frame = capture_rtsp_frame(authenticated_url)
@@ -295,7 +309,7 @@ with left:
             if "bardi_capture" in st.session_state:
                 image_sources = [st.session_state["bardi_capture"]]
             st.caption(
-                "🔒 Kredensial dibaca dari secrets lokal dan tidak ditampilkan di dashboard."
+                "🔒 Kredensial tidak ditampilkan pada hasil analisis dan tidak disimpan ke GitHub."
             )
 with right:
     st.subheader("Aturan keputusan")
