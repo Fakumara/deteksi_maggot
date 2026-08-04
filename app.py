@@ -14,6 +14,8 @@ from PIL import Image
 
 APP_DIR = Path(__file__).resolve().parent
 DEFAULT_MODEL = APP_DIR / "yolo_maggot" / "weights" / "best.pt"
+INFERENCE_IMAGE_SIZE = 1024
+DETECTION_CONFIDENCE = 0.25
 EXPECTED_CLASSES = ("Bayi_Maggot", "Remaja_Maggot", "Dewasa_Maggot")
 CLASS_LABELS = {
     "Bayi_Maggot": "Bayi Maggot",
@@ -172,7 +174,7 @@ def capture_rtsp_frame(rtsp_url: str, timeout_ms: int = 8_000) -> Image.Image:
         capture.release()
 
 
-def run_inference(model, image_sources, confidence: float, iou: float, image_size: int):
+def run_inference(model, image_sources, iou: float):
     rows: list[dict] = []
     rendered: list[tuple[str, object]] = []
 
@@ -180,9 +182,9 @@ def run_inference(model, image_sources, confidence: float, iou: float, image_siz
         image = source.convert("RGB") if isinstance(source, Image.Image) else Image.open(source).convert("RGB")
         result = model.predict(
             source=image,
-            conf=confidence,
+            imgsz=INFERENCE_IMAGE_SIZE,
+            conf=DETECTION_CONFIDENCE,
             iou=iou,
-            imgsz=image_size,
             verbose=False,
         )[0]
         rendered.append((image_name, result.plot()[:, :, ::-1].copy()))
@@ -222,13 +224,13 @@ st.markdown(
 
 with st.sidebar:
     st.header("Pengaturan analisis")
-    confidence = st.slider("Confidence minimum", 0.05, 0.95, 0.25, 0.05)
     iou = st.slider("IoU threshold", 0.10, 0.90, 0.70, 0.05)
     threshold = st.slider("Ambang kesimpulan", 50, 90, 60, 1)
-    image_size = st.select_slider("Ukuran inferensi", [320, 480, 640, 800, 960], value=640)
     st.divider()
     st.caption("Model aktif")
     st.code(str(DEFAULT_MODEL.relative_to(APP_DIR)), language=None)
+    st.caption(f"Ukuran inferensi tetap: {INFERENCE_IMAGE_SIZE} px")
+    st.caption(f"Confidence minimum tetap: {DETECTION_CONFIDENCE}")
     st.markdown(
         "<p class='small-note'>Persentase dihitung dari total confidence tiap kelas, lalu dinormalisasi menjadi 100%.</p>",
         unsafe_allow_html=True,
@@ -336,9 +338,7 @@ try:
     model = load_model(str(DEFAULT_MODEL))
     validate_model_classes(model.names)
     with st.spinner(f"Menganalisis {len(image_sources)} gambar…"):
-        detections, rendered_images = run_inference(
-            model, image_sources, confidence, iou, image_size
-        )
+        detections, rendered_images = run_inference(model, image_sources, iou)
 except Exception as exc:
     st.error(f"Analisis gagal: {exc}")
     st.stop()
